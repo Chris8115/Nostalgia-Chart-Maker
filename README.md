@@ -1,4 +1,4 @@
-# Nostalgia Mapper
+# Nostalgia Chart Maker
 
 TypeScript toolchain for creating, editing, packaging, and installing custom Nostalgia OP3 song charts.
 
