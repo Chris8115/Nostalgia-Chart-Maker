@@ -585,6 +585,32 @@ button:disabled {
   min-height: 0;
 }
 
+.audioLayerToggles {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border: 1px solid #3c3836;
+  border-radius: 4px;
+  background: #1b1c20;
+}
+
+.audioLayerToggles label {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  gap: 4px;
+  color: #bdb4a9;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.audioLayerToggles input {
+  width: auto;
+  min-height: 0;
+}
+
 .emptyAudio {
   display: flex;
   align-items: center;

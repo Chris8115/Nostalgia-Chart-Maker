@@ -56,6 +56,9 @@ function App() {
   const [zoom, setZoom] = useState(1);
   const [showBeatGuide, setShowBeatGuide] = useState(true);
   const [showAudioGuide, setShowAudioGuide] = useState(false);
+  const [showAudioWaveform, setShowAudioWaveform] = useState(true);
+  const [showAudioOnsets, setShowAudioOnsets] = useState(false);
+  const [showAudioBrightness, setShowAudioBrightness] = useState(false);
   const [audioGuide, setAudioGuide] = useState<AudioGuidePoint[]>([]);
   const [shiftNotesWithOffset, setShiftNotesWithOffset] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -379,7 +382,7 @@ function App() {
         if (!original) return note;
         const nextEnd = Math.max(original.startMs + 80, snapTimeMs(original.endMs + dxMs));
         const duration = nextEnd - original.startMs;
-        const type: Op3Note["type"] = duration > 500 ? "hold" : "tap";
+        const type: Op3Note["type"] = original.type === "tap" ? duration > 500 ? "hold" : "tap" : original.type;
         return { ...note, endMs: Math.round(nextEnd), type };
       }));
       return;
@@ -910,6 +913,11 @@ function App() {
           <label className="snapControl">Snap<select value={snap} onChange={(e) => setSnap(Number(e.target.value))}><option value={2}>1/2</option><option value={4}>1/4</option><option value={8}>1/8</option><option value={16}>1/16</option></select></label>
           <label className="transportToggle"><input type="checkbox" checked={showBeatGuide} onChange={(e) => setShowBeatGuide(e.target.checked)} /> Beats</label>
           <label className="transportToggle"><input type="checkbox" checked={showAudioGuide} onChange={(e) => toggleAudioGuide(e.target.checked)} disabled={!audioFile} /> Audio</label>
+          <div className="audioLayerToggles" aria-label="Audio guide layers">
+            <label title="Teal waveform energy"><input type="checkbox" checked={showAudioWaveform} onChange={(e) => setShowAudioWaveform(e.target.checked)} disabled={!showAudioGuide} /> Wave</label>
+            <label title="Orange transient/onset strength"><input type="checkbox" checked={showAudioOnsets} onChange={(e) => setShowAudioOnsets(e.target.checked)} disabled={!showAudioGuide} /> Onsets</label>
+            <label title="Pale high-frequency/brightness detail"><input type="checkbox" checked={showAudioBrightness} onChange={(e) => setShowAudioBrightness(e.target.checked)} disabled={!showAudioGuide} /> Bright</label>
+          </div>
           <div className="timeReadout" title="Current playhead time">
             <strong>{formatTime(playbackMs)}</strong>
             <span>{playbackMs}ms</span>
@@ -940,7 +948,7 @@ function App() {
         <section className="editorShell">
           <div className="timeline" ref={timelineRef} onDoubleClick={addNoteFromPointer}>
             <div className="timelineInner" style={{ width: totalWidth, height: timelineHeight }}>
-              {showAudioGuide ? <AudioGuide points={audioGuide} pxPerMs={pxPerMs} width={totalWidth} height={timelineHeight} /> : null}
+              {showAudioGuide ? <AudioGuide points={audioGuide} pxPerMs={pxPerMs} width={totalWidth} height={timelineHeight} layers={{ waveform: showAudioWaveform, onsets: showAudioOnsets, brightness: showAudioBrightness }} /> : null}
               {showBeatGuide ? <Grid totalWidth={totalWidth} beatMs={beatMs} offsetMs={project.offsetMs} pxPerMs={pxPerMs} snap={snap} /> : null}
               <MsRuler totalWidth={totalWidth} pxPerMs={pxPerMs} durationMs={project.durationMs} />
               <div className="playhead" style={{ left: playbackMs * pxPerMs }} />
@@ -1026,7 +1034,7 @@ function HowToGuide({ onClose }: { onClose: () => void }) {
           </article>
           <article>
             <h3>2. Align Timing</h3>
-            <p>Turn on Beats and Audio guides. Scrub to the first strong beat, use Set Offset or Phase, then confirm the grid stays aligned later in the song.</p>
+            <p>Turn on Beats and Audio guides. Wave shows energy, Onsets shows orange attack bars, and Bright shows high-frequency detail. Use Set Offset or Phase on a strong beat.</p>
           </article>
           <article>
             <h3>3. Place Notes</h3>
@@ -1196,7 +1204,13 @@ const MsRuler = React.memo(function MsRuler({ totalWidth, pxPerMs, durationMs }:
   return <div className="msRuler" aria-hidden="true">{lines}</div>;
 });
 
-const AudioGuide = React.memo(function AudioGuide({ points, pxPerMs, width, height }: { points: AudioGuidePoint[]; pxPerMs: number; width: number; height: number }) {
+type AudioGuideLayers = {
+  waveform: boolean;
+  onsets: boolean;
+  brightness: boolean;
+};
+
+const AudioGuide = React.memo(function AudioGuide({ points, pxPerMs, width, height, layers }: { points: AudioGuidePoint[]; pxPerMs: number; width: number; height: number; layers: AudioGuideLayers }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -1239,13 +1253,15 @@ const AudioGuide = React.memo(function AudioGuide({ points, pxPerMs, width, heig
       const onsetHeight = point.onset * cssHeight * 0.86;
       const strong = point.onset > 0.58 || point.onset * 0.7 + point.energy * 0.3 > 0.62;
 
-      ctx.strokeStyle = "rgba(84, 214, 188, 0.42)";
-      ctx.beginPath();
-      ctx.moveTo(crispX, centerY - energyHeight / 2);
-      ctx.lineTo(crispX, centerY + energyHeight / 2);
-      ctx.stroke();
+      if (layers.waveform) {
+        ctx.strokeStyle = "rgba(84, 214, 188, 0.58)";
+        ctx.beginPath();
+        ctx.moveTo(crispX, centerY - energyHeight / 2);
+        ctx.lineTo(crispX, centerY + energyHeight / 2);
+        ctx.stroke();
+      }
 
-      if (point.brightness > 0.08) {
+      if (layers.brightness && point.brightness > 0.08) {
         ctx.strokeStyle = "rgba(180, 219, 255, 0.28)";
         ctx.beginPath();
         ctx.moveTo(crispX + 1, centerY - brightnessHeight / 2);
@@ -1253,20 +1269,20 @@ const AudioGuide = React.memo(function AudioGuide({ points, pxPerMs, width, heig
         ctx.stroke();
       }
 
-      if (point.onset > 0.12) {
-        ctx.strokeStyle = strong ? "rgba(255, 219, 119, 0.96)" : "rgba(240, 189, 92, 0.7)";
+      if (layers.onsets && point.onset > 0.12) {
+        ctx.strokeStyle = strong ? "rgba(255, 219, 119, 0.84)" : "rgba(240, 189, 92, 0.52)";
         ctx.beginPath();
         ctx.moveTo(crispX, cssHeight);
-        ctx.lineTo(crispX, Math.max(0, cssHeight - onsetHeight));
+        ctx.lineTo(crispX, Math.max(cssHeight * 0.18, cssHeight - onsetHeight));
         ctx.stroke();
       }
 
-      if (strong) {
-        ctx.fillStyle = "rgba(245, 217, 125, 0.95)";
+      if (layers.onsets && strong) {
+        ctx.fillStyle = "rgba(245, 217, 125, 0.82)";
         ctx.fillRect(Math.round(x), 0, Math.max(2, bucketPx), 10);
       }
     }
-  }, [points, pxPerMs, width, height]);
+  }, [points, pxPerMs, width, height, layers]);
 
   if (points.length === 0) {
     return <div className="audioGuide audioGuideEmpty">Audio guide loading</div>;
