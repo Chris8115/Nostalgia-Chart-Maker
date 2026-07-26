@@ -1,5 +1,5 @@
 {
-  "name": "nostalgia-mapper",
+  "name": "nostalgia-chart-maker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,15 +11,6 @@
     "build:ui": "vite build",
     "preview:ui": "vite preview --host 127.0.0.1",
     "install:project": "node dist/cli.js install-project",
-    "seed:aishite-project": "node dist/cli.js seed-aishite-project",
-    "install:aishite": "node dist/cli.js install-aishite",
-    "install:aishite-audio": "node dist/cli.js install-aishite-audio",
-    "install:aishite-audio-alias": "node dist/cli.js install-aishite-audio-alias",
-    "install:aishite-audio-pcm-alias": "node dist/cli.js install-aishite-audio-pcm-alias",
-    "probe:aishite-existing": "node dist/cli.js probe-existing --basename M_T0116_qma_milkywaystar",
-    "probe:aishite-known-assets": "node dist/cli.js probe-known-assets --basename M_T0116_qma_milkywaystar",
-    "restore:aishite-custom": "node dist/cli.js restore-custom",
-    "remove:aishite": "node dist/cli.js remove --basename M_CUSTOM0001_AISHITE",
     "analyze:official": "python scripts/analyze_official_charts.py"
   },
   "devDependencies": {

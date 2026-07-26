@@ -15,7 +15,7 @@ def main() -> None:
     source_image = Path(sys.argv[2]).resolve()
     output_ifs = Path(sys.argv[3]).resolve()
     index = int(sys.argv[4])
-    title = sys.argv[5] if len(sys.argv) >= 6 else "Aishite"
+    title = sys.argv[5] if len(sys.argv) >= 6 else "New Song"
     artist = sys.argv[6] if len(sys.argv) >= 7 else ""
     description = sys.argv[7] if len(sys.argv) == 8 else "Community custom chart"
     padded = f"{index:04d}"

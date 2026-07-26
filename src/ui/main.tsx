@@ -39,7 +39,6 @@ type GameSong = {
 const laneCount = 28;
 const laneWidth = 28;
 const timelineHeight = laneCount * laneWidth;
-const msPerBeatDefault = 60000 / 137;
 const apiBase = "http://127.0.0.1:5174";
 
 function App() {
@@ -70,7 +69,7 @@ function App() {
   const [serverDir, setServerDir] = useState("");
   const [syncServer, setSyncServer] = useState(true);
   const [uniqueXsb, setUniqueXsb] = useState(false);
-  const [projectPath, setProjectPath] = useState(".\\m_custom0001_aishite.op3song.json");
+  const [projectPath, setProjectPath] = useState(".\\m_custom0001_newsong.op3song.json");
   const [songs, setSongs] = useState<GameSong[]>([]);
   const [patcherStatus, setPatcherStatus] = useState<string | null>(null);
   const [patcherBusy, setPatcherBusy] = useState(false);
@@ -291,9 +290,9 @@ function App() {
     if (midiFile) zip.file(`midi/${midiFile.name}`, midiFile);
     if (jacketFile) zip.file(`jacket/${jacketFile.name}`, jacketFile);
     zip.file("README.txt", [
-      "OP3 Mapper song package",
+      "Nostalgia Chart Maker song package",
       "",
-      "Load this .op3song.zip in the OP3 Mapper Web UI, then use Add Current to patch it into a game folder.",
+      "Load this .op3song.zip in the Nostalgia Chart Maker Web UI, then use Add Current to patch it into a game folder.",
       ""
     ].join("\r\n"));
 
@@ -582,7 +581,7 @@ function App() {
         <section className="brand">
           <Music2 size={24} />
           <div>
-            <h1>OP3 Mapper</h1>
+            <h1>Nostalgia Chart Maker</h1>
             <p>Chart editor and patcher prototype</p>
           </div>
         </section>
@@ -1087,29 +1086,7 @@ function noteStyle(note: Op3Note, pxPerMs: number): React.CSSProperties {
 }
 
 function seedProject(): Op3SongProject {
-  const project = createEmptyProject();
-  const beatMs = msPerBeatDefault;
-  for (const difficulty of difficulties) {
-    const width = difficulty === "normal" ? 5 : difficulty === "hard" ? 4 : 3;
-    const count = difficulty === "normal" ? 28 : difficulty === "hard" ? 44 : difficulty === "expert" ? 64 : 88;
-    const notes: Op3Note[] = [];
-    for (let i = 0; i < count; i++) {
-      const hand: Op3Hand = i % 2 === 0 ? "left" : "right";
-      const center = hand === "left" ? 8 + (i % 4) : 18 + (i % 5);
-      notes.push({
-        id: crypto.randomUUID(),
-        startMs: Math.round(beatMs * (4 + i * (difficulty === "normal" ? 1.5 : 1))),
-        endMs: Math.round(beatMs * (4 + i * (difficulty === "normal" ? 1.5 : 1)) + beatMs * 0.5),
-        hand,
-        minKey: clamp(center - Math.floor(width / 2), 0, laneCount - 1),
-        maxKey: clamp(center - Math.floor(width / 2) + width - 1, 0, laneCount - 1),
-        pitch: hand === "left" ? 40 : 64,
-        type: i % 16 === 0 ? "hold" : "tap"
-      });
-    }
-    project.charts[difficulty].notes = notes;
-  }
-  return project;
+  return createEmptyProject();
 }
 
 function shiftProjectNotes(project: Op3SongProject, deltaMs: number): Op3SongProject {

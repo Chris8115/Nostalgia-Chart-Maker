@@ -15,7 +15,7 @@ def main() -> None:
     source_image = Path(sys.argv[2]).resolve()
     output_ifs = Path(sys.argv[3]).resolve()
     index = int(sys.argv[4])
-    title = sys.argv[5] if len(sys.argv) == 6 else "Aishite"
+    title = sys.argv[5] if len(sys.argv) == 6 else "New Song"
     padded = f"{index:04d}"
 
     scratch = output_ifs.parent / f"afp_jkms{padded}_l_ifs_build"
