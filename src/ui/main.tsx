@@ -934,6 +934,7 @@ function App() {
           <label className="transportToggle"><input type="checkbox" checked={showBeatGuide} onChange={(e) => setShowBeatGuide(e.target.checked)} /> Beats</label>
           <label className="transportToggle"><input type="checkbox" checked={showAudioGuide} onChange={(e) => toggleAudioGuide(e.target.checked)} disabled={!audioFile} /> Audio</label>
           <label className="transportToggle"><input type="checkbox" checked={showMidiGuide} onChange={(e) => setShowMidiGuide(e.target.checked)} disabled={midiGuide.length === 0} /> MIDI</label>
+          {midiGuide.length > 0 ? <span className="midiGuideCount" title="Parsed MIDI notes">{midiGuide.length} MIDI notes</span> : null}
           <div className="audioLayerToggles" aria-label="Audio guide layers">
             <label title="Teal waveform energy"><input type="checkbox" checked={showAudioWaveform} onChange={(e) => setShowAudioWaveform(e.target.checked)} disabled={!showAudioGuide} /> Wave</label>
             <label title="Orange transient/onset strength"><input type="checkbox" checked={showAudioOnsets} onChange={(e) => setShowAudioOnsets(e.target.checked)} disabled={!showAudioGuide} /> Onsets</label>
@@ -1227,31 +1228,47 @@ const MsRuler = React.memo(function MsRuler({ totalWidth, pxPerMs, durationMs }:
 });
 
 const MidiGuide = React.memo(function MidiGuide({ notes, pxPerMs }: { notes: MidiGuideNote[]; pxPerMs: number }) {
-  const pitches = notes.map((note) => note.pitch).sort((a, b) => a - b);
-  const low = pitches[Math.floor(pitches.length * 0.05)] ?? 36;
-  const high = pitches[Math.floor(pitches.length * 0.95)] ?? 84;
-  const span = Math.max(12, high - low);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  return (
-    <div className="midiGuide" aria-hidden="true">
-      {notes.slice(0, 6000).map((note, index) => {
-        const lane = clamp(Math.round((note.pitch - low) / span * (laneCount - 1)), 0, laneCount - 1);
-        const top = (laneCount - 1 - lane) * laneWidth + 7;
-        return (
-          <div
-            key={`${note.startMs}-${note.pitch}-${index}`}
-            className="midiGuideNote"
-            style={{
-              left: note.startMs * pxPerMs,
-              top,
-              width: Math.max(3, (note.endMs - note.startMs) * pxPerMs),
-              opacity: 0.28 + clamp(note.velocity / 127, 0, 1) * 0.42
-            }}
-          />
-        );
-      })}
-    </div>
-  );
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || notes.length === 0) return;
+
+    const maxEndMs = Math.max(...notes.map((note) => note.endMs));
+    const cssWidth = Math.max(1, Math.ceil(maxEndMs * pxPerMs + 48));
+    const cssHeight = timelineHeight;
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(cssHeight * dpr);
+    canvas.style.width = `${cssWidth}px`;
+    canvas.style.height = `${cssHeight}px`;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    const pitches = notes.map((note) => note.pitch).sort((a, b) => a - b);
+    const low = pitches[Math.floor(pitches.length * 0.02)] ?? 36;
+    const high = pitches[Math.floor(pitches.length * 0.98)] ?? 84;
+    const span = Math.max(12, high - low);
+
+    for (const note of notes) {
+      const lane = clamp(Math.round((note.pitch - low) / span * (laneCount - 1)), 0, laneCount - 1);
+      const x = Math.round(note.startMs * pxPerMs) + 0.5;
+      const y = (laneCount - 1 - lane) * laneWidth + 7.5;
+      const width = Math.max(2, (note.endMs - note.startMs) * pxPerMs);
+      const alpha = 0.24 + clamp(note.velocity / 127, 0, 1) * 0.46;
+      ctx.fillStyle = `rgba(170, 116, 255, ${alpha})`;
+      ctx.strokeStyle = `rgba(232, 208, 255, ${Math.min(0.82, alpha + 0.2)})`;
+      ctx.beginPath();
+      roundedRect(ctx, x, y, width, 14, 3);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }, [notes, pxPerMs]);
+
+  return <canvas ref={canvasRef} className="midiGuide" aria-hidden="true" />;
 });
 
 type AudioGuideLayers = {
@@ -1509,7 +1526,7 @@ function parseMidiGuide(data: Uint8Array): MidiGuideNote[] {
       velocity: start.velocity
     });
   }
-  return notes.filter((note) => note.endMs - note.startMs >= 20).sort((a, b) => a.startMs - b.startMs || a.pitch - b.pitch);
+  return notes.filter((note) => note.endMs > note.startMs).sort((a, b) => a.startMs - b.startMs || a.pitch - b.pitch);
 }
 
 function parseMidiTrack(data: Uint8Array, start: number, end: number, track: number) {
@@ -1595,6 +1612,21 @@ function readU16(data: Uint8Array, offset: number): number {
 
 function readU32(data: Uint8Array, offset: number): number {
   return (data[offset] * 0x1000000) + ((data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
+}
+
+function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const right = x + width;
+  const bottom = y + height;
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(right - r, y);
+  ctx.quadraticCurveTo(right, y, right, y + r);
+  ctx.lineTo(right, bottom - r);
+  ctx.quadraticCurveTo(right, bottom, right - r, bottom);
+  ctx.lineTo(x + r, bottom);
+  ctx.quadraticCurveTo(x, bottom, x, bottom - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
 function seedProject(): Op3SongProject {

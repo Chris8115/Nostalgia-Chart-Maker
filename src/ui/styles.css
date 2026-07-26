@@ -611,6 +611,13 @@ button:disabled {
   min-height: 0;
 }
 
+.midiGuideCount {
+  min-width: 84px;
+  color: #d9c8ff;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .emptyAudio {
   display: flex;
   align-items: center;
@@ -740,18 +747,8 @@ button:disabled {
   position: absolute;
   inset: 0;
   z-index: 1;
-  overflow: hidden;
   pointer-events: none;
-}
-
-.midiGuideNote {
-  position: absolute;
-  height: 14px;
-  min-width: 3px;
-  border: 1px solid rgba(232, 208, 255, 0.62);
-  border-radius: 3px;
-  background: rgba(170, 116, 255, 0.72);
-  box-shadow: 0 0 8px rgba(155, 107, 255, 0.28);
+  opacity: 0.95;
 }
 
 .beatLine {
