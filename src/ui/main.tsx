@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Download, Eraser, FileAudio, FolderOpen, Grip, MousePointer2, Music2, Pause, Play, Plus, RefreshCw, Repeat2, Save, Trash2 } from "lucide-react";
+import { Copy, Download, Eraser, FileAudio, FlipHorizontal2, FolderOpen, Grip, HelpCircle, Magnet, MousePointer2, Music2, Pause, Play, Plus, RefreshCw, Repeat2, Save, Trash2, X } from "lucide-react";
 import JSZip from "jszip";
 import {
   Op3Difficulty,
@@ -73,6 +73,7 @@ function App() {
   const [songs, setSongs] = useState<GameSong[]>([]);
   const [patcherStatus, setPatcherStatus] = useState<string | null>(null);
   const [patcherBusy, setPatcherBusy] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const noteDragRef = useRef<NoteDrag | null>(null);
@@ -205,6 +206,66 @@ function App() {
   function changeSelected(patch: Partial<Op3Note>) {
     if (!selectedId) return;
     updateChart(chart.notes.map((note) => note.id === selectedId ? { ...note, ...patch } : note));
+  }
+
+  function quantizeNote(note: Op3Note): Op3Note {
+    const duration = Math.max(80, note.endMs - note.startMs);
+    const startMs = Math.round(snapTimeMs(note.startMs));
+    const endMs = Math.max(startMs + 80, Math.round(snapTimeMs(note.startMs + duration)));
+    return { ...note, startMs, endMs };
+  }
+
+  function quantizeSelected() {
+    if (!selectedId) return;
+    updateChart(chart.notes.map((note) => note.id === selectedId ? quantizeNote(note) : note));
+    setGenerationStatus("Quantized selected note to the current snap.");
+  }
+
+  function quantizeCurrentChart() {
+    updateChart(chart.notes.map(quantizeNote));
+    setGenerationStatus(`Quantized ${difficulty} to the current snap.`);
+  }
+
+  function duplicateSelected() {
+    const selectedNote = chart.notes.find((note) => note.id === selectedId);
+    if (!selectedNote) return;
+    const snapMs = beatMs / snap;
+    const duration = selectedNote.endMs - selectedNote.startMs;
+    const startMs = Math.round(snapTimeMs(selectedNote.startMs + snapMs));
+    const copy: Op3Note = {
+      ...selectedNote,
+      id: crypto.randomUUID(),
+      startMs,
+      endMs: Math.round(startMs + duration)
+    };
+    updateChart([...chart.notes, copy]);
+    setSelectedId(copy.id);
+    setGenerationStatus("Duplicated selected note.");
+  }
+
+  function mirrorSelected() {
+    if (!selectedId) return;
+    updateChart(chart.notes.map((note) => {
+      if (note.id !== selectedId) return note;
+      const minKey = laneCount - 1 - note.maxKey;
+      const maxKey = laneCount - 1 - note.minKey;
+      const center = (minKey + maxKey) / 2;
+      return {
+        ...note,
+        minKey,
+        maxKey,
+        hand: center < 14 ? "left" : "right"
+      };
+    }));
+    setGenerationStatus("Mirrored selected note across the keyboard.");
+  }
+
+  function clearCurrentChart() {
+    if (chart.notes.length === 0) return;
+    if (!window.confirm(`Clear all ${chart.notes.length} notes from ${difficulty}?`)) return;
+    updateChart([]);
+    setSelectedId(null);
+    setGenerationStatus(`Cleared ${difficulty}.`);
   }
 
   function startNoteDrag(event: React.PointerEvent<HTMLElement>, note: Op3Note, mode: NoteDrag["mode"]) {
@@ -575,6 +636,34 @@ function App() {
 
   const selected = chart.notes.find((note) => note.id === selectedId) ?? null;
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select")) return;
+      if (showGuide && event.key === "Escape") {
+        setShowGuide(false);
+        return;
+      }
+      if (event.key === "1") setTool("select");
+      else if (event.key === "2") setTool("tap");
+      else if (event.key === "3") setTool("hold");
+      else if (event.key === "4") setTool("trill");
+      else if (event.key === "5") setTool("erase");
+      else if (event.key.toLowerCase() === "q" && selectedId) quantizeSelected();
+      else if (event.key.toLowerCase() === "m" && selectedId) mirrorSelected();
+      else if (event.key === "Delete" && selectedId) {
+        updateChart(chart.notes.filter((note) => note.id !== selectedId));
+        setSelectedId(null);
+      } else if (event.ctrlKey && event.key.toLowerCase() === "d" && selectedId) {
+        event.preventDefault();
+        duplicateSelected();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [chart.notes, selectedId, showGuide, snap, beatMs, difficulty]);
+
   return (
     <main className="app">
       <aside className="sidebar">
@@ -699,7 +788,15 @@ function App() {
             <button title="Hold" className={tool === "hold" ? "active" : ""} onClick={() => setTool("hold")}><Grip size={18} /></button>
             <button title="Trill" className={tool === "trill" ? "active" : ""} onClick={() => setTool("trill")}><Repeat2 size={18} /></button>
             <button title="Erase" className={tool === "erase" ? "active" : ""} onClick={() => setTool("erase")}><Eraser size={18} /></button>
+            <span className="toolbarDivider" />
+            <button title="Quantize selected note" disabled={!selected} onClick={quantizeSelected}><Magnet size={18} /></button>
+            <button title="Quantize current difficulty" disabled={chart.notes.length === 0} onClick={quantizeCurrentChart}><Magnet size={18} /><span className="miniBadge">all</span></button>
+            <button title="Duplicate selected note" disabled={!selected} onClick={duplicateSelected}><Copy size={18} /></button>
+            <button title="Mirror selected note" disabled={!selected} onClick={mirrorSelected}><FlipHorizontal2 size={18} /></button>
+            <button title="Clear current difficulty" disabled={chart.notes.length === 0} onClick={clearCurrentChart}><Trash2 size={18} /></button>
+            <span className="toolbarDivider" />
             <button title="Export project" onClick={() => void exportProject()}><Download size={18} /></button>
+            <button title="How to make charts" className="helpButton" onClick={() => setShowGuide(true)}><HelpCircle size={18} /></button>
           </div>
         </header>
 
@@ -797,7 +894,70 @@ function App() {
           <button onClick={() => void exportProject()}><Save size={16} /> Save project</button>
         </footer>
       </section>
+      {showGuide ? <HowToGuide onClose={() => setShowGuide(false)} /> : null}
     </main>
+  );
+}
+
+function HowToGuide({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="modalBackdrop" role="presentation" onMouseDown={onClose}>
+      <section className="guideModal" role="dialog" aria-modal="true" aria-labelledby="guide-title" onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <div>
+            <h2 id="guide-title">Chart Making Quick Guide</h2>
+            <p>Build the chart around timing first, then shape the keyboard movement.</p>
+          </div>
+          <button title="Close guide" onClick={onClose}><X size={18} /></button>
+        </header>
+
+        <div className="guideGrid">
+          <article>
+            <h3>1. Prepare</h3>
+            <p>Load audio, set title/artist, pick a genre, then set BPM and offset before placing lots of notes.</p>
+          </article>
+          <article>
+            <h3>2. Align Timing</h3>
+            <p>Turn on Beats and Audio guides. Scrub to the first strong beat, use Set Offset or Phase, then confirm the grid stays aligned later in the song.</p>
+          </article>
+          <article>
+            <h3>3. Place Notes</h3>
+            <p>Use Tap for short hits, Hold for sustained sounds, and Trill for fast alternating two-key figures. Double-click the lane grid to place notes.</p>
+          </article>
+          <article>
+            <h3>4. Edit Fast</h3>
+            <p>Select notes to drag them. Grab the right edge to stretch into a hold. Use quantize, duplicate, mirror, and erase to clean patterns quickly.</p>
+          </article>
+          <article>
+            <h3>5. Difficulty Style</h3>
+            <p>Normal should be readable and musical. Hard adds hand movement. Expert and Real can add density, but avoid clutter and overlapping holds.</p>
+          </article>
+          <article>
+            <h3>6. Test</h3>
+            <p>Check Validation, export a project zip, then Add Current while the game is closed. Sync Server if your setup uses a local server.</p>
+          </article>
+        </div>
+
+        <section className="guideTools">
+          <h3>Tool Suite</h3>
+          <div>
+            <span><MousePointer2 size={15} /> Select and drag notes</span>
+            <span><Plus size={15} /> Add taps</span>
+            <span><Grip size={15} /> Add holds</span>
+            <span><Repeat2 size={15} /> Add trills</span>
+            <span><Eraser size={15} /> Erase notes</span>
+            <span><Magnet size={15} /> Quantize timing</span>
+            <span><Copy size={15} /> Duplicate selected</span>
+            <span><FlipHorizontal2 size={15} /> Mirror selected</span>
+          </div>
+        </section>
+
+        <footer>
+          <p>MIDI-assisted generation is usually cleaner than audio-only generation. Treat generated charts as drafts and polish by hand.</p>
+          <button onClick={onClose}>Got it</button>
+        </footer>
+      </section>
+    </div>
   );
 }
 
