@@ -736,6 +736,24 @@ button:disabled {
   opacity: 0.95;
 }
 
+.midiGuide {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.midiGuideNote {
+  position: absolute;
+  height: 14px;
+  min-width: 3px;
+  border: 1px solid rgba(232, 208, 255, 0.62);
+  border-radius: 3px;
+  background: rgba(170, 116, 255, 0.72);
+  box-shadow: 0 0 8px rgba(155, 107, 255, 0.28);
+}
+
 .beatLine {
   position: absolute;
   top: 0;

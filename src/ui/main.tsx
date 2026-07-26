@@ -33,6 +33,13 @@ type BoxSelection = {
   currentY: number;
 };
 
+type MidiGuideNote = {
+  startMs: number;
+  endMs: number;
+  pitch: number;
+  velocity: number;
+};
+
 type GameSong = {
   index: number;
   basename: string;
@@ -60,7 +67,9 @@ function App() {
   const [showAudioOnsets, setShowAudioOnsets] = useState(false);
   const [showAudioBrightness, setShowAudioBrightness] = useState(false);
   const [audioGuide, setAudioGuide] = useState<AudioGuidePoint[]>([]);
+  const [midiGuide, setMidiGuide] = useState<MidiGuideNote[]>([]);
   const [shiftNotesWithOffset, setShiftNotesWithOffset] = useState(true);
+  const [showMidiGuide, setShowMidiGuide] = useState(true);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -468,6 +477,8 @@ function App() {
     const loaded = JSON.parse(text) as Op3SongProject;
     setProject(loaded);
     setAudioGuide([]);
+    setMidiGuide([]);
+    setMidiFile(null);
     replaceSelection([]);
     setGenerationStatus("Loaded project JSON");
   }
@@ -515,10 +526,11 @@ function App() {
     setJacketFile(nextJacketFile);
     setJacketUrl(nextJacketUrl);
     setAudioGuide([]);
+    setMidiGuide(nextMidiFile ? await parseMidiGuideFromFile(nextMidiFile) : []);
     replaceSelection([]);
     setIsPlaying(false);
     setPlaybackMs(0);
-    setGenerationStatus(`Loaded ZIP package${nextAudioFile ? " with audio" : ""}${nextJacketFile ? " and jacket" : ""}`);
+    setGenerationStatus(`Loaded ZIP package${nextAudioFile ? " with audio" : ""}${nextMidiFile ? " and MIDI" : ""}${nextJacketFile ? " and jacket" : ""}`);
     if (nextAudioFile) void ensureAudioGuide(showAudioGuide, nextAudioFile, true);
   }
 
@@ -586,10 +598,18 @@ function App() {
     updateProject({ jacketPath: file.name });
   }
 
-  function loadMidiFile(file: File) {
+  async function loadMidiFile(file: File) {
     setMidiFile(file);
     setProject((current) => ({ ...(current as Op3SongProject & { midiPath?: string }), midiPath: file.name }));
-    setGenerationStatus(`Loaded MIDI ${file.name}. Generate will prefer MIDI mapping.`);
+    try {
+      const notes = await parseMidiGuideFromFile(file);
+      setMidiGuide(notes);
+      setShowMidiGuide(true);
+      setGenerationStatus(`Loaded MIDI ${file.name}. Overlay shows ${notes.length} notes; generation will prefer MIDI mapping.`);
+    } catch (error) {
+      setMidiGuide([]);
+      setGenerationStatus(error instanceof Error ? `Loaded MIDI, but overlay parse failed: ${error.message}` : "Loaded MIDI, but overlay parse failed.");
+    }
   }
 
   async function generateFromAudio() {
@@ -913,6 +933,7 @@ function App() {
           <label className="snapControl">Snap<select value={snap} onChange={(e) => setSnap(Number(e.target.value))}><option value={2}>1/2</option><option value={4}>1/4</option><option value={8}>1/8</option><option value={16}>1/16</option></select></label>
           <label className="transportToggle"><input type="checkbox" checked={showBeatGuide} onChange={(e) => setShowBeatGuide(e.target.checked)} /> Beats</label>
           <label className="transportToggle"><input type="checkbox" checked={showAudioGuide} onChange={(e) => toggleAudioGuide(e.target.checked)} disabled={!audioFile} /> Audio</label>
+          <label className="transportToggle"><input type="checkbox" checked={showMidiGuide} onChange={(e) => setShowMidiGuide(e.target.checked)} disabled={midiGuide.length === 0} /> MIDI</label>
           <div className="audioLayerToggles" aria-label="Audio guide layers">
             <label title="Teal waveform energy"><input type="checkbox" checked={showAudioWaveform} onChange={(e) => setShowAudioWaveform(e.target.checked)} disabled={!showAudioGuide} /> Wave</label>
             <label title="Orange transient/onset strength"><input type="checkbox" checked={showAudioOnsets} onChange={(e) => setShowAudioOnsets(e.target.checked)} disabled={!showAudioGuide} /> Onsets</label>
@@ -949,6 +970,7 @@ function App() {
           <div className="timeline" ref={timelineRef} onDoubleClick={addNoteFromPointer}>
             <div className="timelineInner" style={{ width: totalWidth, height: timelineHeight }}>
               {showAudioGuide ? <AudioGuide points={audioGuide} pxPerMs={pxPerMs} width={totalWidth} height={timelineHeight} layers={{ waveform: showAudioWaveform, onsets: showAudioOnsets, brightness: showAudioBrightness }} /> : null}
+              {showMidiGuide && midiGuide.length > 0 ? <MidiGuide notes={midiGuide} pxPerMs={pxPerMs} /> : null}
               {showBeatGuide ? <Grid totalWidth={totalWidth} beatMs={beatMs} offsetMs={project.offsetMs} pxPerMs={pxPerMs} snap={snap} /> : null}
               <MsRuler totalWidth={totalWidth} pxPerMs={pxPerMs} durationMs={project.durationMs} />
               <div className="playhead" style={{ left: playbackMs * pxPerMs }} />
@@ -1038,7 +1060,7 @@ function HowToGuide({ onClose }: { onClose: () => void }) {
           </article>
           <article>
             <h3>3. Place Notes</h3>
-            <p>Use Tap for short hits, Hold for sustained sounds, and Trill for fast alternating two-key figures. Double-click the lane grid to place notes.</p>
+            <p>Use Tap for short hits, Hold for sustained sounds, and Trill for fast alternating two-key figures. Load MIDI and enable the MIDI overlay to trace source note positions.</p>
           </article>
           <article>
             <h3>4. Edit Fast</h3>
@@ -1202,6 +1224,34 @@ const MsRuler = React.memo(function MsRuler({ totalWidth, pxPerMs, durationMs }:
   }
 
   return <div className="msRuler" aria-hidden="true">{lines}</div>;
+});
+
+const MidiGuide = React.memo(function MidiGuide({ notes, pxPerMs }: { notes: MidiGuideNote[]; pxPerMs: number }) {
+  const pitches = notes.map((note) => note.pitch).sort((a, b) => a - b);
+  const low = pitches[Math.floor(pitches.length * 0.05)] ?? 36;
+  const high = pitches[Math.floor(pitches.length * 0.95)] ?? 84;
+  const span = Math.max(12, high - low);
+
+  return (
+    <div className="midiGuide" aria-hidden="true">
+      {notes.slice(0, 6000).map((note, index) => {
+        const lane = clamp(Math.round((note.pitch - low) / span * (laneCount - 1)), 0, laneCount - 1);
+        const top = (laneCount - 1 - lane) * laneWidth + 7;
+        return (
+          <div
+            key={`${note.startMs}-${note.pitch}-${index}`}
+            className="midiGuideNote"
+            style={{
+              left: note.startMs * pxPerMs,
+              top,
+              width: Math.max(3, (note.endMs - note.startMs) * pxPerMs),
+              opacity: 0.28 + clamp(note.velocity / 127, 0, 1) * 0.42
+            }}
+          />
+        );
+      })}
+    </div>
+  );
 });
 
 type AudioGuideLayers = {
@@ -1412,6 +1462,139 @@ function noteIntersectsBox(note: Op3Note, box: ReturnType<typeof normalizedBox>,
   const noteTop = (laneCount - 1 - note.maxKey) * laneWidth;
   const noteBottom = (laneCount - note.minKey) * laneWidth;
   return noteLeft <= box.right && noteRight >= box.left && noteTop <= box.bottom && noteBottom >= box.top;
+}
+
+async function parseMidiGuideFromFile(file: File): Promise<MidiGuideNote[]> {
+  return parseMidiGuide(new Uint8Array(await file.arrayBuffer()));
+}
+
+function parseMidiGuide(data: Uint8Array): MidiGuideNote[] {
+  if (readAscii(data, 0, 4) !== "MThd") throw new Error("Not a MIDI file.");
+  const headerLength = readU32(data, 4);
+  const trackCount = readU16(data, 10);
+  const division = readU16(data, 12);
+  if (division & 0x8000) throw new Error("SMPTE MIDI timing is not supported.");
+
+  let cursor = 8 + headerLength;
+  const events: Array<{ tick: number; kind: "on" | "off"; pitch: number; velocity: number; channel: number; track: number }> = [];
+  const tempos: Array<{ tick: number; tempo: number }> = [{ tick: 0, tempo: 500000 }];
+  for (let track = 0; track < trackCount; track++) {
+    if (readAscii(data, cursor, 4) !== "MTrk") throw new Error(`Missing MIDI track ${track}.`);
+    const length = readU32(data, cursor + 4);
+    const end = cursor + 8 + length;
+    const parsed = parseMidiTrack(data, cursor + 8, end, track);
+    events.push(...parsed.events);
+    tempos.push(...parsed.tempos);
+    cursor = end;
+  }
+
+  const tempoMap = tempos.sort((a, b) => a.tick - b.tick);
+  const active = new Map<string, Array<{ tick: number; velocity: number; pitch: number; channel: number; track: number }>>();
+  const notes: MidiGuideNote[] = [];
+  for (const event of events.sort((a, b) => a.tick - b.tick || (a.kind === "off" ? -1 : 1))) {
+    const key = `${event.track}:${event.channel}:${event.pitch}`;
+    if (event.kind === "on") {
+      const stack = active.get(key) ?? [];
+      stack.push(event);
+      active.set(key, stack);
+      continue;
+    }
+    const stack = active.get(key);
+    const start = stack?.shift();
+    if (!start || event.tick <= start.tick) continue;
+    notes.push({
+      startMs: Math.round(tickToMs(start.tick, tempoMap, division)),
+      endMs: Math.round(tickToMs(event.tick, tempoMap, division)),
+      pitch: start.pitch,
+      velocity: start.velocity
+    });
+  }
+  return notes.filter((note) => note.endMs - note.startMs >= 20).sort((a, b) => a.startMs - b.startMs || a.pitch - b.pitch);
+}
+
+function parseMidiTrack(data: Uint8Array, start: number, end: number, track: number) {
+  let cursor = start;
+  let tick = 0;
+  let runningStatus = 0;
+  const events: Array<{ tick: number; kind: "on" | "off"; pitch: number; velocity: number; channel: number; track: number }> = [];
+  const tempos: Array<{ tick: number; tempo: number }> = [];
+  while (cursor < end) {
+    const delta = readVarLen(data, cursor);
+    tick += delta.value;
+    cursor = delta.next;
+    let status = data[cursor];
+    if (status < 0x80) {
+      if (!runningStatus) throw new Error("Invalid MIDI running status.");
+      status = runningStatus;
+    } else {
+      cursor += 1;
+      if (status < 0xF0) runningStatus = status;
+    }
+
+    if (status === 0xFF) {
+      const metaType = data[cursor++];
+      const length = readVarLen(data, cursor);
+      cursor = length.next;
+      if (metaType === 0x51 && length.value === 3) {
+        tempos.push({ tick, tempo: (data[cursor] << 16) | (data[cursor + 1] << 8) | data[cursor + 2] });
+      }
+      cursor += length.value;
+      if (metaType === 0x2F) break;
+      continue;
+    }
+
+    if (status === 0xF0 || status === 0xF7) {
+      const length = readVarLen(data, cursor);
+      cursor = length.next + length.value;
+      continue;
+    }
+
+    const eventType = status & 0xF0;
+    const channel = status & 0x0F;
+    const dataLength = eventType === 0xC0 || eventType === 0xD0 ? 1 : 2;
+    const first = data[cursor++];
+    const second = dataLength === 2 ? data[cursor++] : 0;
+    if (eventType === 0x90 || eventType === 0x80) {
+      const kind = eventType === 0x90 && second > 0 ? "on" : "off";
+      events.push({ tick, kind, pitch: first, velocity: second, channel, track });
+    }
+  }
+  return { events, tempos };
+}
+
+function tickToMs(tick: number, tempos: Array<{ tick: number; tempo: number }>, division: number): number {
+  let elapsed = 0;
+  let previousTick = 0;
+  let tempo = 500000;
+  for (const entry of tempos) {
+    if (entry.tick > tick) break;
+    elapsed += (entry.tick - previousTick) * tempo / division / 1000;
+    previousTick = entry.tick;
+    tempo = entry.tempo;
+  }
+  return elapsed + (tick - previousTick) * tempo / division / 1000;
+}
+
+function readVarLen(data: Uint8Array, cursor: number): { value: number; next: number } {
+  let value = 0;
+  for (let i = 0; i < 4; i++) {
+    const byte = data[cursor++];
+    value = (value << 7) | (byte & 0x7F);
+    if (!(byte & 0x80)) return { value, next: cursor };
+  }
+  return { value, next: cursor };
+}
+
+function readAscii(data: Uint8Array, offset: number, length: number): string {
+  return String.fromCharCode(...data.slice(offset, offset + length));
+}
+
+function readU16(data: Uint8Array, offset: number): number {
+  return (data[offset] << 8) | data[offset + 1];
+}
+
+function readU32(data: Uint8Array, offset: number): number {
+  return (data[offset] * 0x1000000) + ((data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
 }
 
 function seedProject(): Op3SongProject {
