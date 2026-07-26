@@ -21,9 +21,16 @@ type Tool = "select" | "tap" | "hold" | "trill" | "erase";
 
 type NoteDrag = {
   mode: "move" | "resize";
-  note: Op3Note;
+  notes: Op3Note[];
   startClientX: number;
   startClientY: number;
+};
+
+type BoxSelection = {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
 };
 
 type GameSong = {
@@ -51,7 +58,7 @@ function App() {
   const [showAudioGuide, setShowAudioGuide] = useState(false);
   const [audioGuide, setAudioGuide] = useState<AudioGuidePoint[]>([]);
   const [shiftNotesWithOffset, setShiftNotesWithOffset] = useState(true);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [midiFile, setMidiFile] = useState<File | null>(null);
@@ -74,6 +81,7 @@ function App() {
   const [patcherStatus, setPatcherStatus] = useState<string | null>(null);
   const [patcherBusy, setPatcherBusy] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [boxSelection, setBoxSelection] = useState<BoxSelection | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const noteDragRef = useRef<NoteDrag | null>(null);
@@ -161,6 +169,19 @@ function App() {
     updateChart(chart.notes.map((note) => note.id === noteId ? { ...note, ...patch } : note));
   }
 
+  function selectedNotes() {
+    const selected = new Set(selectedIds);
+    return chart.notes.filter((note) => selected.has(note.id));
+  }
+
+  function replaceSelection(nextIds: string[]) {
+    setSelectedIds([...new Set(nextIds)]);
+  }
+
+  function toggleNoteSelection(noteId: string) {
+    setSelectedIds((current) => current.includes(noteId) ? current.filter((id) => id !== noteId) : [...current, noteId]);
+  }
+
   function snapTimeMs(timeMs: number) {
     const snapMs = beatMs / snap;
     return Math.max(0, Math.round((timeMs - project.offsetMs) / snapMs) * snapMs + project.offsetMs);
@@ -200,12 +221,58 @@ function App() {
     };
 
     updateChart([...chart.notes, note]);
-    setSelectedId(note.id);
+    replaceSelection([note.id]);
+  }
+
+  function timelinePointFromPointer(event: React.PointerEvent<HTMLDivElement>) {
+    if (!timelineRef.current) return null;
+    const rect = timelineRef.current.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left + timelineRef.current.scrollLeft,
+      y: event.clientY - rect.top + timelineRef.current.scrollTop
+    };
+  }
+
+  function startBoxSelection(event: React.PointerEvent<HTMLDivElement>) {
+    if (tool !== "select") return;
+    const target = event.target as HTMLElement;
+    if (!target.classList.contains("selectionCatcher")) return;
+    const point = timelinePointFromPointer(event);
+    if (!point) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setBoxSelection({ startX: point.x, startY: point.y, currentX: point.x, currentY: point.y });
+    if (!event.shiftKey && !event.ctrlKey && !event.metaKey) replaceSelection([]);
+  }
+
+  function moveBoxSelection(event: React.PointerEvent<HTMLDivElement>) {
+    if (!boxSelection) return;
+    const point = timelinePointFromPointer(event);
+    if (!point) return;
+    setBoxSelection((current) => current ? { ...current, currentX: point.x, currentY: point.y } : null);
+  }
+
+  function finishBoxSelection(event: React.PointerEvent<HTMLDivElement>) {
+    if (!boxSelection) return;
+    const selection = normalizedBox(boxSelection);
+    const nextIds = chart.notes
+      .filter((note) => noteIntersectsBox(note, selection, pxPerMs))
+      .map((note) => note.id);
+    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+      replaceSelection([...selectedIds, ...nextIds]);
+    } else {
+      replaceSelection(nextIds);
+    }
+    setBoxSelection(null);
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already be released.
+    }
   }
 
   function changeSelected(patch: Partial<Op3Note>) {
-    if (!selectedId) return;
-    updateChart(chart.notes.map((note) => note.id === selectedId ? { ...note, ...patch } : note));
+    if (selectedIds.length !== 1) return;
+    updateChart(chart.notes.map((note) => note.id === selectedIds[0] ? { ...note, ...patch } : note));
   }
 
   function quantizeNote(note: Op3Note): Op3Note {
@@ -216,9 +283,10 @@ function App() {
   }
 
   function quantizeSelected() {
-    if (!selectedId) return;
-    updateChart(chart.notes.map((note) => note.id === selectedId ? quantizeNote(note) : note));
-    setGenerationStatus("Quantized selected note to the current snap.");
+    if (selectedIds.length === 0) return;
+    const selected = new Set(selectedIds);
+    updateChart(chart.notes.map((note) => selected.has(note.id) ? quantizeNote(note) : note));
+    setGenerationStatus(`Quantized ${selectedIds.length} selected note${selectedIds.length === 1 ? "" : "s"} to the current snap.`);
   }
 
   function quantizeCurrentChart() {
@@ -227,26 +295,29 @@ function App() {
   }
 
   function duplicateSelected() {
-    const selectedNote = chart.notes.find((note) => note.id === selectedId);
-    if (!selectedNote) return;
+    const selected = selectedNotes();
+    if (selected.length === 0) return;
     const snapMs = beatMs / snap;
-    const duration = selectedNote.endMs - selectedNote.startMs;
-    const startMs = Math.round(snapTimeMs(selectedNote.startMs + snapMs));
-    const copy: Op3Note = {
-      ...selectedNote,
-      id: crypto.randomUUID(),
-      startMs,
-      endMs: Math.round(startMs + duration)
-    };
-    updateChart([...chart.notes, copy]);
-    setSelectedId(copy.id);
-    setGenerationStatus("Duplicated selected note.");
+    const copies = selected.map((note) => {
+      const duration = note.endMs - note.startMs;
+      const startMs = Math.round(snapTimeMs(note.startMs + snapMs));
+      return {
+        ...note,
+        id: crypto.randomUUID(),
+        startMs,
+        endMs: Math.round(startMs + duration)
+      };
+    });
+    updateChart([...chart.notes, ...copies]);
+    replaceSelection(copies.map((note) => note.id));
+    setGenerationStatus(`Duplicated ${copies.length} selected note${copies.length === 1 ? "" : "s"}.`);
   }
 
   function mirrorSelected() {
-    if (!selectedId) return;
+    if (selectedIds.length === 0) return;
+    const selected = new Set(selectedIds);
     updateChart(chart.notes.map((note) => {
-      if (note.id !== selectedId) return note;
+      if (!selected.has(note.id)) return note;
       const minKey = laneCount - 1 - note.maxKey;
       const maxKey = laneCount - 1 - note.minKey;
       const center = (minKey + maxKey) / 2;
@@ -257,14 +328,14 @@ function App() {
         hand: center < 14 ? "left" : "right"
       };
     }));
-    setGenerationStatus("Mirrored selected note across the keyboard.");
+    setGenerationStatus(`Mirrored ${selectedIds.length} selected note${selectedIds.length === 1 ? "" : "s"} across the keyboard.`);
   }
 
   function clearCurrentChart() {
     if (chart.notes.length === 0) return;
     if (!window.confirm(`Clear all ${chart.notes.length} notes from ${difficulty}?`)) return;
     updateChart([]);
-    setSelectedId(null);
+    replaceSelection([]);
     setGenerationStatus(`Cleared ${difficulty}.`);
   }
 
@@ -275,10 +346,16 @@ function App() {
       updateChart(chart.notes.filter((candidate) => candidate.id !== note.id));
       return;
     }
-    setSelectedId(note.id);
+    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+      toggleNoteSelection(note.id);
+    } else if (!selectedIds.includes(note.id)) {
+      replaceSelection([note.id]);
+    }
+    const dragIds = selectedIds.includes(note.id) ? selectedIds : [note.id];
+    const selected = chart.notes.filter((candidate) => dragIds.includes(candidate.id));
     noteDragRef.current = {
       mode,
-      note,
+      notes: selected.length > 0 ? selected : [note],
       startClientX: event.clientX,
       startClientY: event.clientY
     };
@@ -296,28 +373,39 @@ function App() {
 
     const dxMs = (event.clientX - drag.startClientX) / pxPerMs;
     if (drag.mode === "resize") {
-      const nextEnd = Math.max(drag.note.startMs + 80, snapTimeMs(drag.note.endMs + dxMs));
-      const duration = nextEnd - drag.note.startMs;
-      const type: Op3Note["type"] = duration > 500 ? "hold" : "tap";
-      updateNote(drag.note.id, { endMs: Math.round(nextEnd), type });
+      const targets = new Map(drag.notes.map((note) => [note.id, note]));
+      updateChart(chart.notes.map((note) => {
+        const original = targets.get(note.id);
+        if (!original) return note;
+        const nextEnd = Math.max(original.startMs + 80, snapTimeMs(original.endMs + dxMs));
+        const duration = nextEnd - original.startMs;
+        const type: Op3Note["type"] = duration > 500 ? "hold" : "tap";
+        return { ...note, endMs: Math.round(nextEnd), type };
+      }));
       return;
     }
 
-    const duration = drag.note.endMs - drag.note.startMs;
-    const width = drag.note.maxKey - drag.note.minKey + 1;
-    const nextStart = snapTimeMs(drag.note.startMs + dxMs);
     const laneDelta = Math.round((drag.startClientY - event.clientY) / laneWidth);
-    const nextMinKey = clamp(drag.note.minKey + laneDelta, 0, laneCount - width);
-    const nextMaxKey = nextMinKey + width - 1;
-    const center = (nextMinKey + nextMaxKey) / 2;
-    const hand: Op3Hand = center < 14 ? "left" : "right";
-    updateNote(drag.note.id, {
-      startMs: Math.round(nextStart),
-      endMs: Math.round(nextStart + duration),
-      minKey: nextMinKey,
-      maxKey: nextMaxKey,
-      hand
-    });
+    const targets = new Map(drag.notes.map((note) => [note.id, note]));
+    updateChart(chart.notes.map((note) => {
+      const original = targets.get(note.id);
+      if (!original) return note;
+      const duration = original.endMs - original.startMs;
+      const width = original.maxKey - original.minKey + 1;
+      const nextStart = snapTimeMs(original.startMs + dxMs);
+      const nextMinKey = clamp(original.minKey + laneDelta, 0, laneCount - width);
+      const nextMaxKey = nextMinKey + width - 1;
+      const center = (nextMinKey + nextMaxKey) / 2;
+      const hand: Op3Hand = center < 14 ? "left" : "right";
+      return {
+        ...note,
+        startMs: Math.round(nextStart),
+        endMs: Math.round(nextStart + duration),
+        minKey: nextMinKey,
+        maxKey: nextMaxKey,
+        hand
+      };
+    }));
   }
 
   function endNoteDrag(event: React.PointerEvent<HTMLButtonElement>) {
@@ -377,7 +465,7 @@ function App() {
     const loaded = JSON.parse(text) as Op3SongProject;
     setProject(loaded);
     setAudioGuide([]);
-    setSelectedId(null);
+    replaceSelection([]);
     setGenerationStatus("Loaded project JSON");
   }
 
@@ -424,7 +512,7 @@ function App() {
     setJacketFile(nextJacketFile);
     setJacketUrl(nextJacketUrl);
     setAudioGuide([]);
-    setSelectedId(null);
+    replaceSelection([]);
     setIsPlaying(false);
     setPlaybackMs(0);
     setGenerationStatus(`Loaded ZIP package${nextAudioFile ? " with audio" : ""}${nextJacketFile ? " and jacket" : ""}`);
@@ -521,14 +609,14 @@ function App() {
       });
       const generated = result.project;
       setProject(generated);
-      setSelectedId(null);
+      replaceSelection([]);
       setGenerationStatus(`Generated ${difficulties.map((diff) => `${diff} ${generated.charts[diff].notes.length}`).join(", ")}`);
     } catch (error) {
       setGenerationStatus("Server mapper failed; using browser fallback.");
       try {
         const generated = await generateProjectFromAudio(audioFile, project, { density: generateDensity, sensitivity: generateSensitivity, trills: generateTrills });
         setProject(generated);
-        setSelectedId(null);
+        replaceSelection([]);
         setGenerationStatus(`Generated with browser fallback: ${difficulties.map((diff) => `${diff} ${generated.charts[diff].notes.length}`).join(", ")}`);
       } catch (fallbackError) {
         setGenerationStatus(fallbackError instanceof Error ? fallbackError.message : error instanceof Error ? error.message : "Audio generation failed.");
@@ -634,7 +722,9 @@ function App() {
     }
   }
 
-  const selected = chart.notes.find((note) => note.id === selectedId) ?? null;
+  const selectedSet = new Set(selectedIds);
+  const selectedList = chart.notes.filter((note) => selectedSet.has(note.id));
+  const selected = selectedList.length === 1 ? selectedList[0] : null;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -649,12 +739,13 @@ function App() {
       else if (event.key === "3") setTool("hold");
       else if (event.key === "4") setTool("trill");
       else if (event.key === "5") setTool("erase");
-      else if (event.key.toLowerCase() === "q" && selectedId) quantizeSelected();
-      else if (event.key.toLowerCase() === "m" && selectedId) mirrorSelected();
-      else if (event.key === "Delete" && selectedId) {
-        updateChart(chart.notes.filter((note) => note.id !== selectedId));
-        setSelectedId(null);
-      } else if (event.ctrlKey && event.key.toLowerCase() === "d" && selectedId) {
+      else if (event.key.toLowerCase() === "q" && selectedIds.length > 0) quantizeSelected();
+      else if (event.key.toLowerCase() === "m" && selectedIds.length > 0) mirrorSelected();
+      else if (event.key === "Delete" && selectedIds.length > 0) {
+        const selected = new Set(selectedIds);
+        updateChart(chart.notes.filter((note) => !selected.has(note.id)));
+        replaceSelection([]);
+      } else if (event.ctrlKey && event.key.toLowerCase() === "d" && selectedIds.length > 0) {
         event.preventDefault();
         duplicateSelected();
       }
@@ -662,7 +753,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [chart.notes, selectedId, showGuide, snap, beatMs, difficulty]);
+  }, [chart.notes, selectedIds, showGuide, snap, beatMs, difficulty]);
 
   return (
     <main className="app">
@@ -776,7 +867,7 @@ function App() {
         <header className="topbar">
           <div className="tabs">
             {difficulties.map((diff) => (
-              <button key={diff} className={difficulty === diff ? "active" : ""} onClick={() => { setDifficulty(diff); setSelectedId(null); }}>
+              <button key={diff} className={difficulty === diff ? "active" : ""} onClick={() => { setDifficulty(diff); replaceSelection([]); }}>
                 {diff}
                 <span>{project.charts[diff].notes.length}</span>
               </button>
@@ -789,10 +880,10 @@ function App() {
             <button title="Trill" className={tool === "trill" ? "active" : ""} onClick={() => setTool("trill")}><Repeat2 size={18} /></button>
             <button title="Erase" className={tool === "erase" ? "active" : ""} onClick={() => setTool("erase")}><Eraser size={18} /></button>
             <span className="toolbarDivider" />
-            <button title="Quantize selected note" disabled={!selected} onClick={quantizeSelected}><Magnet size={18} /></button>
+            <button title="Quantize selected notes" disabled={selectedIds.length === 0} onClick={quantizeSelected}><Magnet size={18} /></button>
             <button title="Quantize current difficulty" disabled={chart.notes.length === 0} onClick={quantizeCurrentChart}><Magnet size={18} /><span className="miniBadge">all</span></button>
-            <button title="Duplicate selected note" disabled={!selected} onClick={duplicateSelected}><Copy size={18} /></button>
-            <button title="Mirror selected note" disabled={!selected} onClick={mirrorSelected}><FlipHorizontal2 size={18} /></button>
+            <button title="Duplicate selected notes" disabled={selectedIds.length === 0} onClick={duplicateSelected}><Copy size={18} /></button>
+            <button title="Mirror selected notes" disabled={selectedIds.length === 0} onClick={mirrorSelected}><FlipHorizontal2 size={18} /></button>
             <button title="Clear current difficulty" disabled={chart.notes.length === 0} onClick={clearCurrentChart}><Trash2 size={18} /></button>
             <span className="toolbarDivider" />
             <button title="Export project" onClick={() => void exportProject()}><Download size={18} /></button>
@@ -857,7 +948,7 @@ function App() {
               {chart.notes.map((note) => (
                 <button
                   key={note.id}
-                  className={`note ${note.type} ${note.hand} ${selectedId === note.id ? "selected" : ""}`}
+                  className={`note ${note.type} ${note.hand} ${selectedSet.has(note.id) ? "selected" : ""}`}
                   style={noteStyle(note, pxPerMs)}
                   onPointerDown={(event) => startNoteDrag(event, note, "move")}
                   onPointerMove={moveDraggedNote}
@@ -872,6 +963,14 @@ function App() {
                   />
                 </button>
               ))}
+              <div
+                className="selectionCatcher"
+                onPointerDown={startBoxSelection}
+                onPointerMove={moveBoxSelection}
+                onPointerUp={finishBoxSelection}
+                onPointerCancel={() => setBoxSelection(null)}
+              />
+              {boxSelection ? <div className="boxSelection" style={boxStyle(boxSelection)} /> : null}
             </div>
           </div>
         </section>
@@ -886,10 +985,19 @@ function App() {
               <label>Max<input type="number" value={selected.maxKey} onChange={(e) => changeSelected({ maxKey: Number(e.target.value) })} /></label>
               <label>Hand<select value={selected.hand} onChange={(e) => changeSelected({ hand: e.target.value as Op3Hand })}><option value="left">Left</option><option value="right">Right</option><option value="both">Both</option></select></label>
               <label>Type<select value={selected.type} onChange={(e) => changeSelected({ type: e.target.value as Op3Note["type"] })}><option value="tap">Tap</option><option value="hold">Hold</option><option value="trill">Trill</option></select></label>
-              <button onClick={() => updateChart(chart.notes.filter((note) => note.id !== selected.id))}><Trash2 size={16} /></button>
+              <button onClick={() => { updateChart(chart.notes.filter((note) => note.id !== selected.id)); replaceSelection([]); }}><Trash2 size={16} /></button>
+            </>
+          ) : selectedList.length > 1 ? (
+            <>
+              <strong>{selectedList.length} notes</strong>
+              <span>Drag any selected note to move the group, or use toolbar actions to quantize, duplicate, mirror, or delete.</span>
+              <button onClick={quantizeSelected}><Magnet size={16} /> Quantize</button>
+              <button onClick={duplicateSelected}><Copy size={16} /> Duplicate</button>
+              <button onClick={mirrorSelected}><FlipHorizontal2 size={16} /> Mirror</button>
+              <button onClick={() => { const selected = new Set(selectedIds); updateChart(chart.notes.filter((note) => !selected.has(note.id))); replaceSelection([]); }}><Trash2 size={16} /> Delete</button>
             </>
           ) : (
-            <span>Double-click the lane grid to place notes. Select a note to edit timing and width.</span>
+            <span>Double-click the lane grid to place notes. Use Select mode to click, shift-click, or drag a box around notes.</span>
           )}
           <button onClick={() => void exportProject()}><Save size={16} /> Save project</button>
         </footer>
@@ -949,6 +1057,24 @@ function HowToGuide({ onClose }: { onClose: () => void }) {
             <span><Magnet size={15} /> Quantize timing</span>
             <span><Copy size={15} /> Duplicate selected</span>
             <span><FlipHorizontal2 size={15} /> Mirror selected</span>
+          </div>
+        </section>
+
+        <section className="guideTools keyBindingGuide">
+          <h3>Controls</h3>
+          <div>
+            <span><kbd>1</kbd> Select</span>
+            <span><kbd>2</kbd> Tap</span>
+            <span><kbd>3</kbd> Hold</span>
+            <span><kbd>4</kbd> Trill</span>
+            <span><kbd>5</kbd> Erase</span>
+            <span><kbd>Shift</kbd> + click Add/remove selection</span>
+            <span><kbd>Drag</kbd> empty grid Box select</span>
+            <span><kbd>Q</kbd> Quantize selected</span>
+            <span><kbd>M</kbd> Mirror selected</span>
+            <span><kbd>Ctrl</kbd> + <kbd>D</kbd> Duplicate selected</span>
+            <span><kbd>Delete</kbd> Delete selected</span>
+            <span><kbd>Esc</kbd> Close guide</span>
           </div>
         </section>
 
@@ -1243,6 +1369,33 @@ function noteStyle(note: Op3Note, pxPerMs: number): React.CSSProperties {
     top: laneTop,
     height: laneHeight
   };
+}
+
+function normalizedBox(box: BoxSelection) {
+  return {
+    left: Math.min(box.startX, box.currentX),
+    right: Math.max(box.startX, box.currentX),
+    top: Math.min(box.startY, box.currentY),
+    bottom: Math.max(box.startY, box.currentY)
+  };
+}
+
+function boxStyle(box: BoxSelection): React.CSSProperties {
+  const normalized = normalizedBox(box);
+  return {
+    left: normalized.left,
+    top: normalized.top,
+    width: Math.max(1, normalized.right - normalized.left),
+    height: Math.max(1, normalized.bottom - normalized.top)
+  };
+}
+
+function noteIntersectsBox(note: Op3Note, box: ReturnType<typeof normalizedBox>, pxPerMs: number): boolean {
+  const noteLeft = note.startMs * pxPerMs;
+  const noteRight = note.endMs * pxPerMs;
+  const noteTop = (laneCount - 1 - note.maxKey) * laneWidth;
+  const noteBottom = (laneCount - note.minKey) * laneWidth;
+  return noteLeft <= box.right && noteRight >= box.left && noteTop <= box.bottom && noteBottom >= box.top;
 }
 
 function seedProject(): Op3SongProject {
