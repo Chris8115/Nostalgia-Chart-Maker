@@ -355,6 +355,18 @@ Important rules:
 - Include build/test notes with pull requests.
 - Report sensitive issues using the guidance in `SECURITY.md`.
 
+## Detailed Guides
+
+Beginner-friendly guide pages live in `docs/wiki/`:
+
+- [Getting Started](docs/wiki/Getting-Started.md)
+- [Game Directory Setup](docs/wiki/Game-Directory-Setup.md)
+- [Server Sync](docs/wiki/Server-Sync.md)
+- [Project Package Format](docs/wiki/Project-Package-Format.md)
+- [Chart Editing Basics](docs/wiki/Chart-Editing-Basics.md)
+- [Automapper Notes](docs/wiki/Automapper-Notes.md)
+- [Known Limitations](docs/wiki/Known-Limitations.md)
+
 ## Repository Layout
 
 ```text
@@ -371,6 +383,7 @@ scripts/
   build_small_jacket.py
 
 docs/
+  wiki/                   beginner and deep-dive guide pages
   audio-bank-research.md notes from audio-bank experiments
 
 backups/
