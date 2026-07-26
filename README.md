@@ -344,6 +344,17 @@ Do not commit:
 
 Users should provide their own game directory, audio, MIDI, and jacket images.
 
+## Contributing And Safety
+
+See `CONTRIBUTING.md` before opening a pull request.
+
+Important rules:
+
+- Keep game files and copyrighted media out of the repository.
+- Keep the patcher API local. Do not expose it to the public internet.
+- Include build/test notes with pull requests.
+- Report sensitive issues using the guidance in `SECURITY.md`.
+
 ## Repository Layout
 
 ```text
@@ -371,4 +382,3 @@ backups/
 This project is licensed under GPLv3. See `LICENSE`.
 
 GPLv3 allows community use, modification, and redistribution, but redistributed modified versions must also provide source code under the same license.
-

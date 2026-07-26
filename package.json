@@ -1,8 +1,21 @@
 {
   "name": "nostalgia-chart-maker",
   "version": "0.1.0",
+  "description": "Community chart editor and patcher prototype for Nostalgia OP3 custom songs.",
+  "license": "GPL-3.0-only",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chris8115/Nostalgia-Chart-Maker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Chris8115/Nostalgia-Chart-Maker/issues"
+  },
+  "homepage": "https://github.com/Chris8115/Nostalgia-Chart-Maker#readme",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc",
     "dev:ui": "vite --host 127.0.0.1",
