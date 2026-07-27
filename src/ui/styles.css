@@ -4,10 +4,17 @@
 
 body {
   margin: 0;
-  min-width: 980px;
   color: #e8e4d8;
   background: #1b1c20;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 button,
@@ -18,8 +25,11 @@ select {
 
 .app {
   display: grid;
-  grid-template-columns: 344px minmax(0, 1fr);
-  min-height: 100vh;
+  grid-template-columns: clamp(292px, 18vw, 344px) minmax(0, 1fr);
+  width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -27,6 +37,8 @@ select {
   flex-direction: column;
   gap: 12px;
   padding: 14px;
+  min-height: 0;
+  overflow: auto;
   border-right: 1px solid #383432;
   background: #222124;
 }
@@ -383,7 +395,9 @@ button:disabled {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
+  height: 100dvh;
+  overflow: hidden;
   background: #18191d;
 }
 
@@ -464,14 +478,21 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 10px 12px;
   border-bottom: 1px solid #343134;
   background: #242428;
 }
 
+.tabs {
+  flex: 1 1 360px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .tabs button {
-  min-width: 92px;
+  min-width: 88px;
   justify-content: space-between;
   text-transform: capitalize;
 }
@@ -490,6 +511,7 @@ button:disabled {
 }
 
 .actions {
+  flex: 0 1 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -526,13 +548,17 @@ button:disabled {
 }
 
 .transport {
+  flex-wrap: wrap;
   padding: 10px 12px;
   border-bottom: 1px solid #343134;
   background: #202125;
 }
 
 .transport audio {
-  width: min(560px, 45vw);
+  flex: 1 1 360px;
+  width: auto;
+  min-width: 260px;
+  max-width: 560px;
   height: 34px;
 }
 
@@ -580,8 +606,9 @@ button:disabled {
   gap: 7px;
 }
 
-.transportToggle.wideToggle {
-  width: 86px;
+.transportToggle.orientationToggle {
+  width: 92px;
+  color: #f0d190;
 }
 
 .transportToggle input {
@@ -625,7 +652,9 @@ button:disabled {
 .emptyAudio {
   display: flex;
   align-items: center;
-  width: min(560px, 45vw);
+  flex: 1 1 360px;
+  min-width: 260px;
+  max-width: 560px;
   height: 34px;
   padding: 0 10px;
   color: #8c8782;
@@ -662,9 +691,19 @@ button:disabled {
 }
 
 .editorShell {
+  display: grid;
   min-width: 0;
   min-height: 0;
   padding: 12px;
+  overflow: hidden;
+}
+
+.editorGrid {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .timeline {
@@ -675,6 +714,82 @@ button:disabled {
   border: 1px solid #3a383a;
   border-radius: 6px;
   background: #111216;
+}
+
+.editorGrid .timeline {
+  border-radius: 0 6px 6px 0;
+}
+
+.keyboardRail {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #3a383a;
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  background: #14151a;
+}
+
+.keyZone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  border-block: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+  pointer-events: none;
+}
+
+.keyZone span {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  color: #0c0d10;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.keyZone small {
+  color: rgba(12, 13, 16, 0.82);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.leftZone {
+  background: linear-gradient(180deg, rgba(98, 182, 212, 0.9), rgba(98, 182, 212, 0.56));
+}
+
+.rightZone {
+  background: linear-gradient(180deg, rgba(240, 189, 92, 0.92), rgba(240, 189, 92, 0.58));
+}
+
+.keyRailHint {
+  position: absolute;
+  right: 4px;
+  min-width: 22px;
+  padding: 1px 3px;
+  color: #efe8db;
+  border: 1px solid rgba(239, 232, 219, 0.18);
+  border-radius: 3px;
+  background: rgba(13, 14, 18, 0.66);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.topHint {
+  top: 4px;
+}
+
+.midHint {
+  top: calc(50% - 10px);
+  right: 3px;
+}
+
+.bottomHint {
+  bottom: 4px;
 }
 
 .timelineInner {

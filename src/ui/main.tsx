@@ -940,7 +940,7 @@ function App() {
           <label className="transportToggle"><input type="checkbox" checked={showBeatGuide} onChange={(e) => setShowBeatGuide(e.target.checked)} /> Beats</label>
           <label className="transportToggle"><input type="checkbox" checked={showAudioGuide} onChange={(e) => toggleAudioGuide(e.target.checked)} disabled={!audioFile} /> Audio</label>
           <label className="transportToggle"><input type="checkbox" checked={showMidiGuide} onChange={(e) => setShowMidiGuide(e.target.checked)} disabled={midiGuide.length === 0} /> MIDI</label>
-          <label className="transportToggle wideToggle"><input type="checkbox" checked={lowKeysOnTop} onChange={(e) => setLowKeysOnTop(e.target.checked)} /> Low top</label>
+          <label className="transportToggle orientationToggle" title="Flip the editor display so left-hand low keys appear above right-hand high keys. Exported key numbers stay unchanged."><input type="checkbox" checked={lowKeysOnTop} onChange={(e) => setLowKeysOnTop(e.target.checked)} /> Left top</label>
           {midiGuide.length > 0 ? <span className="midiGuideCount" title="Parsed MIDI notes">{midiGuide.length} MIDI notes</span> : null}
           <div className="audioLayerToggles" aria-label="Audio guide layers">
             <label title="Teal waveform energy"><input type="checkbox" checked={showAudioWaveform} onChange={(e) => setShowAudioWaveform(e.target.checked)} disabled={!showAudioGuide} /> Wave</label>
@@ -975,40 +975,43 @@ function App() {
         </section>
 
         <section className="editorShell">
-          <div className="timeline" ref={timelineRef} onDoubleClick={addNoteFromPointer}>
-            <div className="timelineInner" style={{ width: totalWidth, height: timelineHeight }}>
-              {showAudioGuide ? <AudioGuide points={audioGuide} pxPerMs={pxPerMs} width={totalWidth} height={timelineHeight} layers={{ waveform: showAudioWaveform, onsets: showAudioOnsets, brightness: showAudioBrightness }} /> : null}
-              {showMidiGuide && midiGuide.length > 0 ? <MidiGuide notes={midiGuide} pxPerMs={pxPerMs} lowKeysOnTop={lowKeysOnTop} /> : null}
-              {showBeatGuide ? <Grid totalWidth={totalWidth} beatMs={beatMs} offsetMs={project.offsetMs} pxPerMs={pxPerMs} snap={snap} /> : null}
-              <MsRuler totalWidth={totalWidth} pxPerMs={pxPerMs} durationMs={project.durationMs} />
-              <div className="playhead" style={{ left: playbackMs * pxPerMs }} />
-              {Array.from({ length: laneCount }).map((_, lane) => <div key={lane} className="lane" style={{ top: lane * laneWidth }} />)}
-              {chart.notes.map((note) => (
-                <button
-                  key={note.id}
-                  className={`note ${note.type} ${note.hand} ${selectedSet.has(note.id) ? "selected" : ""}`}
-                  style={noteStyle(note, pxPerMs, lowKeysOnTop)}
-                  onPointerDown={(event) => startNoteDrag(event, note, "move")}
-                  onPointerMove={moveDraggedNote}
-                  onPointerUp={endNoteDrag}
-                  onPointerCancel={endNoteDrag}
-                  onClick={(event) => { event.stopPropagation(); }}
-                >
-                  {note.type === "hold" ? "" : note.type === "trill" ? "tr" : keyWidth(note)}
-                  <span
-                    className="noteResizeHandle"
-                    onPointerDown={(event) => startNoteDrag(event, note, "resize")}
-                  />
-                </button>
-              ))}
-              <div
-                className="selectionCatcher"
-                onPointerDown={startBoxSelection}
-                onPointerMove={moveBoxSelection}
-                onPointerUp={finishBoxSelection}
-                onPointerCancel={() => setBoxSelection(null)}
-              />
-              {boxSelection ? <div className="boxSelection" style={boxStyle(boxSelection)} /> : null}
+          <div className="editorGrid">
+            <KeyboardRail lowKeysOnTop={lowKeysOnTop} />
+            <div className="timeline" ref={timelineRef} onDoubleClick={addNoteFromPointer}>
+              <div className="timelineInner" style={{ width: totalWidth, height: timelineHeight }}>
+                {showAudioGuide ? <AudioGuide points={audioGuide} pxPerMs={pxPerMs} width={totalWidth} height={timelineHeight} layers={{ waveform: showAudioWaveform, onsets: showAudioOnsets, brightness: showAudioBrightness }} /> : null}
+                {showMidiGuide && midiGuide.length > 0 ? <MidiGuide notes={midiGuide} pxPerMs={pxPerMs} lowKeysOnTop={lowKeysOnTop} /> : null}
+                {showBeatGuide ? <Grid totalWidth={totalWidth} beatMs={beatMs} offsetMs={project.offsetMs} pxPerMs={pxPerMs} snap={snap} /> : null}
+                <MsRuler totalWidth={totalWidth} pxPerMs={pxPerMs} durationMs={project.durationMs} />
+                <div className="playhead" style={{ left: playbackMs * pxPerMs }} />
+                {Array.from({ length: laneCount }).map((_, lane) => <div key={lane} className="lane" style={{ top: lane * laneWidth }} />)}
+                {chart.notes.map((note) => (
+                  <button
+                    key={note.id}
+                    className={`note ${note.type} ${note.hand} ${selectedSet.has(note.id) ? "selected" : ""}`}
+                    style={noteStyle(note, pxPerMs, lowKeysOnTop)}
+                    onPointerDown={(event) => startNoteDrag(event, note, "move")}
+                    onPointerMove={moveDraggedNote}
+                    onPointerUp={endNoteDrag}
+                    onPointerCancel={endNoteDrag}
+                    onClick={(event) => { event.stopPropagation(); }}
+                  >
+                    {note.type === "hold" ? "" : note.type === "trill" ? "tr" : keyWidth(note)}
+                    <span
+                      className="noteResizeHandle"
+                      onPointerDown={(event) => startNoteDrag(event, note, "resize")}
+                    />
+                  </button>
+                ))}
+                <div
+                  className="selectionCatcher"
+                  onPointerDown={startBoxSelection}
+                  onPointerMove={moveBoxSelection}
+                  onPointerUp={finishBoxSelection}
+                  onPointerCancel={() => setBoxSelection(null)}
+                />
+                {boxSelection ? <div className="boxSelection" style={boxStyle(boxSelection)} /> : null}
+              </div>
             </div>
           </div>
         </section>
@@ -1278,6 +1281,26 @@ const MidiGuide = React.memo(function MidiGuide({ notes, pxPerMs, lowKeysOnTop }
 
   return <canvas ref={canvasRef} className="midiGuide" aria-hidden="true" />;
 });
+
+function KeyboardRail({ lowKeysOnTop }: { lowKeysOnTop: boolean }) {
+  const leftTop = laneTopForRange(0, 13, lowKeysOnTop);
+  const rightTop = laneTopForRange(14, 27, lowKeysOnTop);
+  return (
+    <aside className="keyboardRail" style={{ height: timelineHeight }} aria-label="Keyboard hand zones">
+      <div className="keyZone leftZone" style={{ top: leftTop, height: laneWidth * 14 }}>
+        <span>Left</span>
+        <small>0-13</small>
+      </div>
+      <div className="keyZone rightZone" style={{ top: rightTop, height: laneWidth * 14 }}>
+        <span>Right</span>
+        <small>14-27</small>
+      </div>
+      <div className="keyRailHint topHint">{lowKeysOnTop ? "0" : "27"}</div>
+      <div className="keyRailHint midHint">13/14</div>
+      <div className="keyRailHint bottomHint">{lowKeysOnTop ? "27" : "0"}</div>
+    </aside>
+  );
+}
 
 type AudioGuideLayers = {
   waveform: boolean;
