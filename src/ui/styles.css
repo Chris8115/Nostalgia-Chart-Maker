@@ -1039,15 +1039,18 @@ button:disabled {
 
 .noteResizeHandle {
   position: absolute;
+  border-radius: 3px;
+}
+
+.timeResizeHandle {
   top: -1px;
   right: -4px;
   bottom: -1px;
   width: 9px;
-  border-radius: 3px;
   cursor: ew-resize;
 }
 
-.noteResizeHandle::after {
+.timeResizeHandle::after {
   content: "";
   position: absolute;
   top: 4px;
@@ -1056,6 +1059,39 @@ button:disabled {
   width: 2px;
   border-radius: 2px;
   background: rgba(12, 13, 16, 0.32);
+}
+
+.verticalResizeHandle {
+  left: 4px;
+  right: 4px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.topResizeHandle {
+  top: -4px;
+}
+
+.bottomResizeHandle {
+  bottom: -4px;
+}
+
+.verticalResizeHandle::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(12, 13, 16, 0.32);
+}
+
+.topResizeHandle::after {
+  top: 3px;
+}
+
+.bottomResizeHandle::after {
+  bottom: 3px;
 }
 
 .note:hover .noteResizeHandle,

@@ -20,7 +20,7 @@ import "./styles.css";
 type Tool = "select" | "tap" | "hold" | "trill" | "erase";
 
 type NoteDrag = {
-  mode: "move" | "resize";
+  mode: "move" | "resizeTime" | "resizeTop" | "resizeBottom";
   notes: Op3Note[];
   startClientX: number;
   startClientY: number;
@@ -74,7 +74,7 @@ function App() {
   const [midiGuide, setMidiGuide] = useState<MidiGuideNote[]>([]);
   const [shiftNotesWithOffset, setShiftNotesWithOffset] = useState(true);
   const [showMidiGuide, setShowMidiGuide] = useState(true);
-  const [lowKeysOnTop, setLowKeysOnTop] = useState(() => localStorage.getItem(lowKeysOnTopStorageKey) === "true");
+  const [lowKeysOnTop, setLowKeysOnTop] = useState(() => localStorage.getItem(lowKeysOnTopStorageKey) !== "false");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -391,7 +391,7 @@ function App() {
     event.stopPropagation();
 
     const dxMs = (event.clientX - drag.startClientX) / pxPerMs;
-    if (drag.mode === "resize") {
+    if (drag.mode === "resizeTime") {
       const targets = new Map(drag.notes.map((note) => [note.id, note]));
       updateChart(chart.notes.map((note) => {
         const original = targets.get(note.id);
@@ -400,6 +400,32 @@ function App() {
         const duration = nextEnd - original.startMs;
         const type: Op3Note["type"] = original.type === "tap" ? duration > 500 ? "hold" : "tap" : original.type;
         return { ...note, endMs: Math.round(nextEnd), type };
+      }));
+      return;
+    }
+
+    if (drag.mode === "resizeTop" || drag.mode === "resizeBottom") {
+      const displayDelta = Math.round((event.clientY - drag.startClientY) / laneWidth);
+      const targets = new Map(drag.notes.map((note) => [note.id, note]));
+      updateChart(chart.notes.map((note) => {
+        const original = targets.get(note.id);
+        if (!original) return note;
+        let nextMinKey = original.minKey;
+        let nextMaxKey = original.maxKey;
+        if (drag.mode === "resizeTop") {
+          if (lowKeysOnTop) {
+            nextMinKey = clamp(original.minKey + displayDelta, 0, original.maxKey);
+          } else {
+            nextMaxKey = clamp(original.maxKey - displayDelta, original.minKey, laneCount - 1);
+          }
+        } else if (lowKeysOnTop) {
+          nextMaxKey = clamp(original.maxKey + displayDelta, original.minKey, laneCount - 1);
+        } else {
+          nextMinKey = clamp(original.minKey - displayDelta, 0, original.maxKey);
+        }
+        const center = (nextMinKey + nextMaxKey) / 2;
+        const hand: Op3Hand = center < 14 ? "left" : "right";
+        return { ...note, minKey: nextMinKey, maxKey: nextMaxKey, hand };
       }));
       return;
     }
@@ -1033,8 +1059,16 @@ function App() {
                   >
                     {note.type === "hold" ? "" : note.type === "trill" ? "tr" : keyWidth(note)}
                     <span
-                      className="noteResizeHandle"
-                      onPointerDown={(event) => startNoteDrag(event, note, "resize")}
+                      className="noteResizeHandle timeResizeHandle"
+                      onPointerDown={(event) => startNoteDrag(event, note, "resizeTime")}
+                    />
+                    <span
+                      className="noteResizeHandle verticalResizeHandle topResizeHandle"
+                      onPointerDown={(event) => startNoteDrag(event, note, "resizeTop")}
+                    />
+                    <span
+                      className="noteResizeHandle verticalResizeHandle bottomResizeHandle"
+                      onPointerDown={(event) => startNoteDrag(event, note, "resizeBottom")}
                     />
                   </button>
                 ))}
@@ -1106,11 +1140,11 @@ function HowToGuide({ onClose }: { onClose: () => void }) {
           </article>
           <article>
             <h3>3. Place Notes</h3>
-            <p>Use Tap for short hits, Hold for sustained sounds, and Trill for fast alternating two-key figures. Enable Low top if you prefer reading low-left keys at the top like a falling notesheet.</p>
+            <p>Use Tap for short hits, Hold for sustained sounds, and Trill for fast alternating two-key figures. Enable Left top if you prefer reading low-left keys at the top like a falling notesheet.</p>
           </article>
           <article>
             <h3>4. Edit Fast</h3>
-            <p>Select notes to drag them. Grab the right edge to stretch into a hold. Use quantize, duplicate, mirror, and erase to clean patterns quickly.</p>
+            <p>Select notes to drag them. Grab the right edge to stretch duration, or top/bottom edges to resize the key range. Use quantize, duplicate, mirror, and erase to clean patterns quickly.</p>
           </article>
           <article>
             <h3>5. Difficulty Style</h3>
@@ -1146,7 +1180,8 @@ function HowToGuide({ onClose }: { onClose: () => void }) {
             <span><kbd>5</kbd> Erase</span>
             <span><kbd>Shift</kbd> + click Add/remove selection</span>
             <span><kbd>Drag</kbd> empty grid Box select</span>
-            <span><kbd>Low top</kbd> Flip editor lane direction</span>
+            <span><kbd>Edge drag</kbd> Resize time or key range</span>
+            <span><kbd>Left top</kbd> Flip editor lane direction</span>
             <span><kbd>Q</kbd> Quantize selected</span>
             <span><kbd>M</kbd> Mirror selected</span>
             <span><kbd>Ctrl</kbd> + <kbd>D</kbd> Duplicate selected</span>
