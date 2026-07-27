@@ -580,6 +580,10 @@ button:disabled {
   gap: 7px;
 }
 
+.transportToggle.wideToggle {
+  width: 86px;
+}
+
 .transportToggle input {
   width: auto;
   min-height: 0;

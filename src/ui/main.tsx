@@ -54,6 +54,7 @@ const laneCount = 28;
 const laneWidth = 28;
 const timelineHeight = laneCount * laneWidth;
 const apiBase = "http://127.0.0.1:5174";
+const lowKeysOnTopStorageKey = "nostalgia-chart-maker.lowKeysOnTop";
 
 function App() {
   const [project, setProject] = useState<Op3SongProject>(() => seedProject());
@@ -70,6 +71,7 @@ function App() {
   const [midiGuide, setMidiGuide] = useState<MidiGuideNote[]>([]);
   const [shiftNotesWithOffset, setShiftNotesWithOffset] = useState(true);
   const [showMidiGuide, setShowMidiGuide] = useState(true);
+  const [lowKeysOnTop, setLowKeysOnTop] = useState(() => localStorage.getItem(lowKeysOnTopStorageKey) === "true");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -207,7 +209,7 @@ function App() {
     const rawMs = localX / pxPerMs;
     const snapMs = beatMs / snap;
     const startMs = snapTimeMs(rawMs);
-    const key = clamp(laneCount - 1 - Math.floor(localY / laneWidth), 0, laneCount - 1);
+    const key = keyFromTimelineY(localY, lowKeysOnTop);
     const defaultWidth = tool === "trill" ? 2 : difficulty === "normal" ? 5 : difficulty === "hard" ? 4 : 3;
     const hand: Op3Hand = key < 14 ? "left" : "right";
     const minKey = clamp(key - Math.floor(defaultWidth / 2), 0, laneCount - 1);
@@ -267,7 +269,7 @@ function App() {
     if (!boxSelection) return;
     const selection = normalizedBox(boxSelection);
     const nextIds = chart.notes
-      .filter((note) => noteIntersectsBox(note, selection, pxPerMs))
+      .filter((note) => noteIntersectsBox(note, selection, pxPerMs, lowKeysOnTop))
       .map((note) => note.id);
     if (event.shiftKey || event.ctrlKey || event.metaKey) {
       replaceSelection([...selectedIds, ...nextIds]);
@@ -397,7 +399,7 @@ function App() {
       return;
     }
 
-    const laneDelta = Math.round((drag.startClientY - event.clientY) / laneWidth);
+    const laneDelta = Math.round((drag.startClientY - event.clientY) / laneWidth) * (lowKeysOnTop ? -1 : 1);
     const targets = new Map(drag.notes.map((note) => [note.id, note]));
     updateChart(chart.notes.map((note) => {
       const original = targets.get(note.id);
@@ -750,6 +752,10 @@ function App() {
   const selected = selectedList.length === 1 ? selectedList[0] : null;
 
   useEffect(() => {
+    localStorage.setItem(lowKeysOnTopStorageKey, lowKeysOnTop ? "true" : "false");
+  }, [lowKeysOnTop]);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select")) return;
@@ -934,6 +940,7 @@ function App() {
           <label className="transportToggle"><input type="checkbox" checked={showBeatGuide} onChange={(e) => setShowBeatGuide(e.target.checked)} /> Beats</label>
           <label className="transportToggle"><input type="checkbox" checked={showAudioGuide} onChange={(e) => toggleAudioGuide(e.target.checked)} disabled={!audioFile} /> Audio</label>
           <label className="transportToggle"><input type="checkbox" checked={showMidiGuide} onChange={(e) => setShowMidiGuide(e.target.checked)} disabled={midiGuide.length === 0} /> MIDI</label>
+          <label className="transportToggle wideToggle"><input type="checkbox" checked={lowKeysOnTop} onChange={(e) => setLowKeysOnTop(e.target.checked)} /> Low top</label>
           {midiGuide.length > 0 ? <span className="midiGuideCount" title="Parsed MIDI notes">{midiGuide.length} MIDI notes</span> : null}
           <div className="audioLayerToggles" aria-label="Audio guide layers">
             <label title="Teal waveform energy"><input type="checkbox" checked={showAudioWaveform} onChange={(e) => setShowAudioWaveform(e.target.checked)} disabled={!showAudioGuide} /> Wave</label>
@@ -971,7 +978,7 @@ function App() {
           <div className="timeline" ref={timelineRef} onDoubleClick={addNoteFromPointer}>
             <div className="timelineInner" style={{ width: totalWidth, height: timelineHeight }}>
               {showAudioGuide ? <AudioGuide points={audioGuide} pxPerMs={pxPerMs} width={totalWidth} height={timelineHeight} layers={{ waveform: showAudioWaveform, onsets: showAudioOnsets, brightness: showAudioBrightness }} /> : null}
-              {showMidiGuide && midiGuide.length > 0 ? <MidiGuide notes={midiGuide} pxPerMs={pxPerMs} /> : null}
+              {showMidiGuide && midiGuide.length > 0 ? <MidiGuide notes={midiGuide} pxPerMs={pxPerMs} lowKeysOnTop={lowKeysOnTop} /> : null}
               {showBeatGuide ? <Grid totalWidth={totalWidth} beatMs={beatMs} offsetMs={project.offsetMs} pxPerMs={pxPerMs} snap={snap} /> : null}
               <MsRuler totalWidth={totalWidth} pxPerMs={pxPerMs} durationMs={project.durationMs} />
               <div className="playhead" style={{ left: playbackMs * pxPerMs }} />
@@ -980,7 +987,7 @@ function App() {
                 <button
                   key={note.id}
                   className={`note ${note.type} ${note.hand} ${selectedSet.has(note.id) ? "selected" : ""}`}
-                  style={noteStyle(note, pxPerMs)}
+                  style={noteStyle(note, pxPerMs, lowKeysOnTop)}
                   onPointerDown={(event) => startNoteDrag(event, note, "move")}
                   onPointerMove={moveDraggedNote}
                   onPointerUp={endNoteDrag}
@@ -1061,7 +1068,7 @@ function HowToGuide({ onClose }: { onClose: () => void }) {
           </article>
           <article>
             <h3>3. Place Notes</h3>
-            <p>Use Tap for short hits, Hold for sustained sounds, and Trill for fast alternating two-key figures. Load MIDI and enable the MIDI overlay to trace source note positions.</p>
+            <p>Use Tap for short hits, Hold for sustained sounds, and Trill for fast alternating two-key figures. Enable Low top if you prefer reading low-left keys at the top like a falling notesheet.</p>
           </article>
           <article>
             <h3>4. Edit Fast</h3>
@@ -1101,6 +1108,7 @@ function HowToGuide({ onClose }: { onClose: () => void }) {
             <span><kbd>5</kbd> Erase</span>
             <span><kbd>Shift</kbd> + click Add/remove selection</span>
             <span><kbd>Drag</kbd> empty grid Box select</span>
+            <span><kbd>Low top</kbd> Flip editor lane direction</span>
             <span><kbd>Q</kbd> Quantize selected</span>
             <span><kbd>M</kbd> Mirror selected</span>
             <span><kbd>Ctrl</kbd> + <kbd>D</kbd> Duplicate selected</span>
@@ -1227,7 +1235,7 @@ const MsRuler = React.memo(function MsRuler({ totalWidth, pxPerMs, durationMs }:
   return <div className="msRuler" aria-hidden="true">{lines}</div>;
 });
 
-const MidiGuide = React.memo(function MidiGuide({ notes, pxPerMs }: { notes: MidiGuideNote[]; pxPerMs: number }) {
+const MidiGuide = React.memo(function MidiGuide({ notes, pxPerMs, lowKeysOnTop }: { notes: MidiGuideNote[]; pxPerMs: number; lowKeysOnTop: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -1256,7 +1264,7 @@ const MidiGuide = React.memo(function MidiGuide({ notes, pxPerMs }: { notes: Mid
     for (const note of notes) {
       const lane = clamp(Math.round((note.pitch - low) / span * (laneCount - 1)), 0, laneCount - 1);
       const x = Math.round(note.startMs * pxPerMs) + 0.5;
-      const y = (laneCount - 1 - lane) * laneWidth + 7.5;
+      const y = laneTopForRange(lane, lane, lowKeysOnTop) + 7.5;
       const width = Math.max(2, (note.endMs - note.startMs) * pxPerMs);
       const alpha = 0.24 + clamp(note.velocity / 127, 0, 1) * 0.46;
       ctx.fillStyle = `rgba(170, 116, 255, ${alpha})`;
@@ -1266,7 +1274,7 @@ const MidiGuide = React.memo(function MidiGuide({ notes, pxPerMs }: { notes: Mid
       ctx.fill();
       ctx.stroke();
     }
-  }, [notes, pxPerMs]);
+  }, [notes, pxPerMs, lowKeysOnTop]);
 
   return <canvas ref={canvasRef} className="midiGuide" aria-hidden="true" />;
 });
@@ -1443,8 +1451,8 @@ function FilePicker({ icon, label, accept, onFile }: { icon: React.ReactNode; la
   );
 }
 
-function noteStyle(note: Op3Note, pxPerMs: number): React.CSSProperties {
-  const laneTop = (laneCount - 1 - note.maxKey) * laneWidth + 4;
+function noteStyle(note: Op3Note, pxPerMs: number, lowKeysOnTop: boolean): React.CSSProperties {
+  const laneTop = laneTopForRange(note.minKey, note.maxKey, lowKeysOnTop) + 4;
   const laneHeight = (note.maxKey - note.minKey + 1) * laneWidth - 8;
   return {
     left: note.startMs * pxPerMs,
@@ -1452,6 +1460,15 @@ function noteStyle(note: Op3Note, pxPerMs: number): React.CSSProperties {
     top: laneTop,
     height: laneHeight
   };
+}
+
+function laneTopForRange(minKey: number, maxKey: number, lowKeysOnTop: boolean): number {
+  return (lowKeysOnTop ? minKey : laneCount - 1 - maxKey) * laneWidth;
+}
+
+function keyFromTimelineY(y: number, lowKeysOnTop: boolean): number {
+  const lane = clamp(Math.floor(y / laneWidth), 0, laneCount - 1);
+  return lowKeysOnTop ? lane : laneCount - 1 - lane;
 }
 
 function normalizedBox(box: BoxSelection) {
@@ -1473,11 +1490,11 @@ function boxStyle(box: BoxSelection): React.CSSProperties {
   };
 }
 
-function noteIntersectsBox(note: Op3Note, box: ReturnType<typeof normalizedBox>, pxPerMs: number): boolean {
+function noteIntersectsBox(note: Op3Note, box: ReturnType<typeof normalizedBox>, pxPerMs: number, lowKeysOnTop = false): boolean {
   const noteLeft = note.startMs * pxPerMs;
   const noteRight = note.endMs * pxPerMs;
-  const noteTop = (laneCount - 1 - note.maxKey) * laneWidth;
-  const noteBottom = (laneCount - note.minKey) * laneWidth;
+  const noteTop = laneTopForRange(note.minKey, note.maxKey, lowKeysOnTop);
+  const noteBottom = noteTop + (note.maxKey - note.minKey + 1) * laneWidth;
   return noteLeft <= box.right && noteRight >= box.left && noteTop <= box.bottom && noteBottom >= box.top;
 }
 
