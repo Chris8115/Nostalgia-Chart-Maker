@@ -53,11 +53,14 @@ type GameSong = {
 const laneCount = 28;
 const laneWidth = 28;
 const timelineHeight = laneCount * laneWidth;
+const keyboardRailWidth = 54;
 const apiBase = "http://127.0.0.1:5174";
 const lowKeysOnTopStorageKey = "nostalgia-chart-maker.lowKeysOnTop";
+const sidebarWidthStorageKey = "nostalgia-chart-maker.sidebarWidth";
 
 function App() {
   const [project, setProject] = useState<Op3SongProject>(() => seedProject());
+  const [sidebarWidth, setSidebarWidth] = useState(() => clamp(Number(localStorage.getItem(sidebarWidthStorageKey)) || 344, 292, 520));
   const [difficulty, setDifficulty] = useState<Op3Difficulty>("normal");
   const [tool, setTool] = useState<Tool>("tap");
   const [snap, setSnap] = useState(4);
@@ -105,6 +108,7 @@ function App() {
   const beatMs = 60000 / Math.max(1, project.bpm);
   const pxPerMs = 0.06 * zoom;
   const totalWidth = Math.max(1800, project.durationMs * pxPerMs);
+  const timelineInnerWidth = totalWidth + keyboardRailWidth;
 
   function updateProject(patch: Partial<Op3SongProject>) {
     setProject((current) => ({ ...current, ...patch }));
@@ -152,7 +156,7 @@ function App() {
     setPlaybackMs(clamped);
     if (timelineRef.current) {
       const viewport = timelineRef.current.clientWidth;
-      const nextScroll = Math.max(0, clamped * pxPerMs - viewport * 0.45);
+      const nextScroll = Math.max(0, keyboardRailWidth + clamped * pxPerMs - viewport * 0.45);
       timelineRef.current.scrollLeft = nextScroll;
     }
   }
@@ -204,8 +208,9 @@ function App() {
   function addNoteFromPointer(event: React.MouseEvent<HTMLDivElement>) {
     if (!timelineRef.current) return;
     const rect = timelineRef.current.getBoundingClientRect();
-    const localX = event.clientX - rect.left + timelineRef.current.scrollLeft;
-    const localY = event.clientY - rect.top;
+    const localX = event.clientX - rect.left + timelineRef.current.scrollLeft - keyboardRailWidth;
+    const localY = event.clientY - rect.top + timelineRef.current.scrollTop;
+    if (localX < 0) return;
     const rawMs = localX / pxPerMs;
     const snapMs = beatMs / snap;
     const startMs = snapTimeMs(rawMs);
@@ -242,7 +247,7 @@ function App() {
     if (!timelineRef.current) return null;
     const rect = timelineRef.current.getBoundingClientRect();
     return {
-      x: event.clientX - rect.left + timelineRef.current.scrollLeft,
+      x: event.clientX - rect.left + timelineRef.current.scrollLeft - keyboardRailWidth,
       y: event.clientY - rect.top + timelineRef.current.scrollTop
     };
   }
@@ -756,6 +761,10 @@ function App() {
   }, [lowKeysOnTop]);
 
   useEffect(() => {
+    localStorage.setItem(sidebarWidthStorageKey, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select")) return;
@@ -784,8 +793,32 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [chart.notes, selectedIds, showGuide, snap, beatMs, difficulty]);
 
+  function startSidebarResize(event: React.PointerEvent<HTMLDivElement>) {
+    const handle = event.currentTarget;
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+    handle.setPointerCapture(event.pointerId);
+
+    function move(pointerEvent: PointerEvent) {
+      setSidebarWidth(clamp(startWidth + pointerEvent.clientX - startX, 292, 520));
+    }
+
+    function end(pointerEvent: PointerEvent) {
+      if (handle.hasPointerCapture(pointerEvent.pointerId)) {
+        handle.releasePointerCapture(pointerEvent.pointerId);
+      }
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    }
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }
+
   return (
-    <main className="app">
+    <main className="app" style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}>
       <aside className="sidebar">
         <section className="brand">
           <Music2 size={24} />
@@ -892,6 +925,8 @@ function App() {
         </section>
       </aside>
 
+      <div className="sidebarResizeHandle" role="separator" aria-label="Resize sidebar" onPointerDown={startSidebarResize} />
+
       <section className="workspace">
         <header className="topbar">
           <div className="tabs">
@@ -975,10 +1010,10 @@ function App() {
         </section>
 
         <section className="editorShell">
-          <div className="editorGrid">
+          <div className="timeline" ref={timelineRef} onDoubleClick={addNoteFromPointer}>
+            <div className="timelineInner" style={{ width: timelineInnerWidth, height: timelineHeight }}>
             <KeyboardRail lowKeysOnTop={lowKeysOnTop} />
-            <div className="timeline" ref={timelineRef} onDoubleClick={addNoteFromPointer}>
-              <div className="timelineInner" style={{ width: totalWidth, height: timelineHeight }}>
+              <div className="timelineContent" style={{ left: keyboardRailWidth, width: totalWidth, height: timelineHeight }}>
                 {showAudioGuide ? <AudioGuide points={audioGuide} pxPerMs={pxPerMs} width={totalWidth} height={timelineHeight} layers={{ waveform: showAudioWaveform, onsets: showAudioOnsets, brightness: showAudioBrightness }} /> : null}
                 {showMidiGuide && midiGuide.length > 0 ? <MidiGuide notes={midiGuide} pxPerMs={pxPerMs} lowKeysOnTop={lowKeysOnTop} /> : null}
                 {showBeatGuide ? <Grid totalWidth={totalWidth} beatMs={beatMs} offsetMs={project.offsetMs} pxPerMs={pxPerMs} snap={snap} /> : null}
